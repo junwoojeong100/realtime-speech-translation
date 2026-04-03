@@ -1,0 +1,4 @@
+azure-identity
+requests
+yt-dlp
+python-dotenv
