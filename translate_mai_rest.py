@@ -1,13 +1,14 @@
 """
-MAI-Transcribe-1 — YouTube 영상 다국어→한국어 번역 자막 생성기
+MAI-Transcribe-1 (REST API) — YouTube 영상 다국어→한국어 번역 자막 생성기
 
-Azure Speech의 MAI-Transcribe-1 (LLM Speech) 모델을 사용하여
-YouTube 영상의 음성을 한국어로 번역합니다.
+Azure Speech의 MAI-Transcribe-1 (LLM Speech) 모델을 requests로 REST API를
+직접 호출하여 YouTube 영상의 음성을 한국어로 번역합니다.
+(SDK 기반 구현은 translate_mai_sdk.py 참고)
 
 Usage:
-    python translate_mai.py <youtube_url>
-    python translate_mai.py <youtube_url> --srt output.srt
-    python translate_mai.py <youtube_url> --chunk-seconds 5
+    python translate_mai_rest.py <youtube_url>
+    python translate_mai_rest.py <youtube_url> --srt output.srt
+    python translate_mai_rest.py <youtube_url> --chunk-seconds 5
 
 Prerequisites:
     - Azure Speech 리소스 (LLM Speech 지원 리전: eastus, westus 등)
