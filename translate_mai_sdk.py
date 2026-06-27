@@ -1,8 +1,8 @@
 """
-YouTube 스트리밍 한글 자막 생성기 (MAI-Transcribe-1, azure-ai-transcription SDK)
+YouTube 스트리밍 한글 자막 생성기 (MAI-Transcribe, azure-ai-transcription SDK)
 
 yt-dlp → ffmpeg 파이프라인으로 오디오를 다운로드 완료 없이 스트리밍 수신하고,
-10초 단위 청크로 MAI-Transcribe-1 모델을 azure-ai-transcription SDK로 호출해
+10초 단위 청크로 MAI-Transcribe 모델을 azure-ai-transcription SDK로 호출해
 결과가 오는 대로 즉시 출력합니다.
 (REST API 직접 호출 구현은 translate_mai_rest.py 참고)
 
@@ -339,7 +339,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="YouTube 동영상 준실시간 한글 자막 생성 (MAI-Transcribe-1)",
+        description="YouTube 동영상 준실시간 한글 자막 생성 (MAI-Transcribe)",
     )
     parser.add_argument("url", help="YouTube 동영상 URL")
     parser.add_argument(
