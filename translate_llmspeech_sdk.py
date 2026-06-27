@@ -1,21 +1,21 @@
 """
-YouTube 스트리밍 한글 자막 생성기 (MAI-Transcribe, azure-ai-transcription SDK)
+YouTube 스트리밍 한글 자막 생성기 (LLM Speech, azure-ai-transcription SDK)
 
 yt-dlp → ffmpeg 파이프라인으로 오디오를 다운로드 완료 없이 스트리밍 수신하고,
-10초 단위 청크로 MAI-Transcribe 모델을 azure-ai-transcription SDK로 호출해
+10초 단위 청크로 LLM Speech 모델을 azure-ai-transcription SDK로 호출해
 결과가 오는 대로 즉시 출력합니다.
-(REST API 직접 호출 구현은 translate_mai_rest.py 참고)
+(REST API 직접 호출 구현은 translate_llmspeech_rest.py 참고)
 
 사전 준비:
-  pip install -r requirements_mai_sdk.txt
+  pip install -r requirements_llmspeech_sdk.txt
 
 .env 파일:
   AZURE_MAI_SPEECH_RESOURCE_ID - Azure Cognitive Services 리소스 ID
 
 사용법:
-  python translate_mai_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID"
-  python translate_mai_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID" --chunk 10
-  python translate_mai_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID" --source-locale ja-JP
+  python translate_llmspeech_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID"
+  python translate_llmspeech_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID" --chunk 10
+  python translate_llmspeech_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID" --source-locale ja-JP
 """
 
 from __future__ import annotations
@@ -339,7 +339,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="YouTube 동영상 준실시간 한글 자막 생성 (MAI-Transcribe)",
+        description="YouTube 동영상 준실시간 한글 자막 생성 (LLM Speech)",
     )
     parser.add_argument("url", help="YouTube 동영상 URL")
     parser.add_argument(

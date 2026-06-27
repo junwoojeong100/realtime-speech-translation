@@ -5,7 +5,7 @@
 기본 모델은 최신 mai-transcribe-1.5이며 task=transcribe로 동작합니다. 기본 소스
 언어는 한국어(ko-KR)이고, --translate-to로 번역 모드도 사용할 수 있습니다.
 
-기존 translate_mai_rest.py가 항상 한국어로 '번역'하는 것과 달리, 이 스크립트는
+기존 translate_llmspeech_rest.py가 항상 한국어로 '번역'하는 것과 달리, 이 스크립트는
 기본이 '전사(말한 언어 그대로 텍스트화)'입니다.
 
 참고: 모델 지정(--model)은 전사 모드에서만 유효합니다. 번역(--translate-to)에는

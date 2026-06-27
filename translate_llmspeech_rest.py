@@ -1,14 +1,14 @@
 """
-MAI-Transcribe (REST API) — YouTube 영상 다국어→한국어 번역 자막 생성기
+LLM Speech (REST API) — YouTube 영상 다국어→한국어 번역 자막 생성기
 
-Azure Speech의 MAI-Transcribe (LLM Speech) 모델을 requests로 REST API를
+Azure Speech의 LLM Speech 모델을 requests로 REST API를
 직접 호출하여 YouTube 영상의 음성을 한국어로 번역합니다.
-(SDK 기반 구현은 translate_mai_sdk.py 참고)
+(SDK 기반 구현은 translate_llmspeech_sdk.py 참고)
 
 Usage:
-    python translate_mai_rest.py <youtube_url>
-    python translate_mai_rest.py <youtube_url> --srt output.srt
-    python translate_mai_rest.py <youtube_url> --chunk-seconds 5
+    python translate_llmspeech_rest.py <youtube_url>
+    python translate_llmspeech_rest.py <youtube_url> --srt output.srt
+    python translate_llmspeech_rest.py <youtube_url> --chunk-seconds 5
 
 Prerequisites:
     - Azure Speech 리소스 (LLM Speech 지원 리전: eastus, westus 등)
@@ -105,7 +105,7 @@ def _get_endpoint_and_headers() -> tuple[str, dict[str, str]]:
 
 
 def transcribe_file(audio_file, endpoint: str, headers: dict[str, str]) -> dict:
-    """Fast Transcription API + MAI-Transcribe enhanced mode 호출"""
+    """Fast Transcription API + LLM Speech enhanced mode 호출"""
     url = f"{endpoint}/speechtotext/transcriptions:transcribe?api-version={API_VERSION}"
 
     definition = json.dumps({
@@ -266,7 +266,7 @@ def _process_chunk(
     srt_entries: list[str],
     srt_index: list[int],
 ):
-    """청크를 WAV로 변환 후 MAI-Transcribe API로 번역"""
+    """청크를 WAV로 변환 후 LLM Speech API로 번역"""
     wav_data = pcm_to_wav_bytes(pcm_data, sample_rate=sample_rate)
 
     try:
@@ -308,7 +308,7 @@ def _process_chunk(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="YouTube 영상 다국어→한국어 실시간 번역 자막 생성기 (MAI-Transcribe)"
+        description="YouTube 영상 다국어→한국어 실시간 번역 자막 생성기 (LLM Speech)"
     )
     parser.add_argument("url", help="YouTube 동영상 URL")
     parser.add_argument("--srt", help="SRT 자막 파일 출력 경로 (예: output.srt)", default=None)
