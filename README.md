@@ -159,17 +159,19 @@ python translate_mai_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID" --output 
 
 ### transcribe_file.py — 오디오 파일 전사 (STT)
 
+기본 모델은 최신 `mai-transcribe-1.5`입니다(전사 모드 한정 — 번역 모드에서는 서비스 제약으로 기본 모델이 사용됩니다).
+
 ```bash
-# 한국어 음성 파일 전사 (기본, 번역 없음)
+# 한국어 음성 파일 전사 (기본 모델 mai-transcribe-1.5)
 python transcribe_file.py news_ko.wav
 
 # SRT 자막 파일 생성
 python transcribe_file.py news_ko.wav --srt output.srt
 
-# 소스 언어 지정
-python transcribe_file.py clip.wav --locale en-US
+# 모델/소스 언어 지정
+python transcribe_file.py clip.wav --model mai-transcribe-1 --locale en-US
 
-# 전사 대신 한국어로 번역
+# 전사 대신 한국어로 번역 (모델 지정은 무시됨)
 python transcribe_file.py foreign.wav --translate-to ko
 ```
 

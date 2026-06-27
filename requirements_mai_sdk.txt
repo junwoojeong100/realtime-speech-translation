@@ -1,4 +1,4 @@
-azure-ai-transcription
+azure-ai-transcription>=1.0.0
 azure-identity
 yt-dlp
 python-dotenv

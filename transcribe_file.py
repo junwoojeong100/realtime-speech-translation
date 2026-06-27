@@ -1,24 +1,27 @@
 """
-음성 전사(STT) — 로컬 오디오 파일 (Fast Transcription + MAI-Transcribe-1)
+음성 전사(STT) — 로컬 오디오 파일 (Fast Transcription + MAI-Transcribe)
 
-YTN 사내 한글 STT 워크로드(요건 1: 한국어 음성 → 한국어 텍스트)를 위한 PoC 샘플입니다.
-방송 녹음 등 로컬 오디오를 '번역 없이 전사만' 하며, MAI-Transcribe-1의
-task=transcribe 모드를 사용합니다. 기본 소스 언어는 한국어(ko-KR)입니다.
+방송 녹음 등 로컬 오디오를 한국어로 '전사'합니다(한국어 음성 → 한국어 텍스트).
+기본 모델은 최신 mai-transcribe-1.5이며 task=transcribe로 동작합니다. 기본 소스
+언어는 한국어(ko-KR)이고, --translate-to로 번역 모드도 사용할 수 있습니다.
 
 기존 translate_mai_rest.py가 항상 한국어로 '번역'하는 것과 달리, 이 스크립트는
 기본이 '전사(말한 언어 그대로 텍스트화)'입니다.
 
+참고: 모델 지정(--model)은 전사 모드에서만 유효합니다. 번역(--translate-to)에는
+서비스가 모델 지정을 허용하지 않으므로 기본 모델이 사용됩니다.
+
 Usage:
-    # 한국어 뉴스 음성 전사 (기본, 요건 1)
+    # 한국어 뉴스 음성 전사 (기본, model: mai-transcribe-1.5)
     python transcribe_file.py news_ko.wav
 
     # SRT 자막 파일로 저장
     python transcribe_file.py news_ko.wav --srt news_ko.srt
 
-    # (선택) 다른 소스 언어로 전사 — 로케일 변경
-    python transcribe_file.py clip.wav --locale en-US
+    # 모델/소스 언어 지정
+    python transcribe_file.py clip.wav --model mai-transcribe-1 --locale en-US
 
-    # (선택) 전사 대신 번역 모드
+    # 전사 대신 번역 모드 (모델 지정은 무시됨)
     python transcribe_file.py foreign.wav --translate-to ko
 
 Prerequisites:
@@ -90,6 +93,7 @@ def transcribe_file(
     audio_path: str,
     locales: list[str],
     translate_to: str | None = None,
+    model: str = "mai-transcribe-1.5",
 ) -> dict:
     """Fast Transcription API 호출 — 기본 전사, translate_to 지정 시 번역."""
     endpoint = _get_endpoint()
@@ -98,9 +102,12 @@ def transcribe_file(
 
     enhanced: dict = {"enabled": True}
     if translate_to:
+        # 번역(task=translate)은 모델 지정을 지원하지 않으므로 기본 모델 사용
         enhanced.update({"task": "translate", "targetLanguage": translate_to})
     else:
         enhanced.update({"task": "transcribe"})
+        if model:
+            enhanced["model"] = model
 
     definition = {"locales": locales, "enhancedMode": enhanced}
 
@@ -123,7 +130,7 @@ def transcribe_file(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="로컬 오디오 파일 전사(STT) — MAI-Transcribe-1, 전사 전용 PoC",
+        description="로컬 오디오 파일 전사(STT) — MAI-Transcribe (기본 mai-transcribe-1.5)",
     )
     parser.add_argument("audio", help="오디오 파일 경로 (wav/mp3/m4a 등)")
     parser.add_argument(
@@ -131,6 +138,10 @@ def main():
         help="소스 언어 로케일(반복 지정 시 자동 감지, 기본 ko-KR)",
     )
     parser.add_argument("--translate-to", default=None, help="전사 대신 번역할 타깃 언어(예: ko)")
+    parser.add_argument(
+        "--model", default="mai-transcribe-1.5",
+        help="전사 모델 (기본: mai-transcribe-1.5). 전사 모드에서만 적용되며 --translate-to 사용 시 무시됩니다.",
+    )
     parser.add_argument("--srt", help="SRT 자막 파일 출력 경로")
     args = parser.parse_args()
 
@@ -138,11 +149,14 @@ def main():
         parser.error(f"오디오 파일을 찾을 수 없습니다: {args.audio}")
 
     locales = args.locales or ["ko-KR"]
-    mode = f"번역(→{args.translate_to})" if args.translate_to else "전사"
+    if args.translate_to:
+        mode = f"번역(→{args.translate_to})"
+    else:
+        mode = f"전사(model: {args.model})"
     print(f"[*] {mode} 시작 — {args.audio}  (locale: {', '.join(locales)})")
     print("=" * 60)
 
-    result = transcribe_file(args.audio, locales, args.translate_to)
+    result = transcribe_file(args.audio, locales, args.translate_to, args.model)
 
     srt_entries: list[str] = []
     idx = 1
