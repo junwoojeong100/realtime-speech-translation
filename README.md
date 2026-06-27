@@ -45,7 +45,7 @@ pip install -r requirements_mai_rest.txt
 # translate_mai_sdk.py 사용 시
 pip install -r requirements_mai_sdk.txt
 
-# translate_text.py 사용 시 (외신 텍스트 번역)
+# text_translate.py 사용 시 (외신 텍스트 번역)
 pip install -r requirements_text.txt
 
 # transcribe_file.py / transcribe_mic.py 사용 시 (음성 전사 STT)
@@ -99,7 +99,7 @@ Azure AD 인증만 지원합니다.
 | `AZURE_SPEECH_REGION` | Azure Speech 리소스 리전 |
 | `AZURE_SPEECH_RESOURCE_ID` | Azure Speech 리소스의 전체 ARM 리소스 ID |
 
-### translate_text.py
+### text_translate.py
 
 | 변수 | 설명 |
 |---|---|
@@ -201,22 +201,22 @@ python transcribe_mic.py --auto-detect ko-KR en-US ja-JP
 
 macOS는 첫 실행 시 터미널 마이크 권한 허용이 필요합니다(시스템 설정 → 개인정보 보호 및 보안 → 마이크).
 
-### translate_text.py — 외신 텍스트 번역 (Azure AI Translator)
+### text_translate.py — 외신 텍스트 번역 (Azure AI Translator)
 
 로이터·AP·CNN 등 외신 영어 텍스트를 한국어로 번역합니다. 요청 한도(1,000줄·50,000자)에 맞춰 자동 배치 처리하며, 표준입력으로 실시간 인입을 처리할 수 있습니다.
 
 ```bash
 # 단건 번역 (영어 → 한국어)
-python translate_text.py "The central bank raised interest rates."
+python text_translate.py "The central bank raised interest rates."
 
 # 파일(줄 단위) 번역 → 결과 파일 생성
-python translate_text.py --file news_en.txt --output news_ko.txt
+python text_translate.py --file news_en.txt --output news_ko.txt
 
 # 표준입력에서 번역
-cat news_en.txt | python translate_text.py --stdin
+cat news_en.txt | python text_translate.py --stdin
 
 # 소스 언어 지정 (자동 감지 대신)
-python translate_text.py "Wall Street rallied." --from en --to ko
+python text_translate.py "Wall Street rallied." --from en --to ko
 ```
 
 ## License

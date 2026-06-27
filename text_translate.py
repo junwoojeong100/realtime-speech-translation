@@ -13,16 +13,16 @@
 
 Usage:
     # 단건 번역 (영어 외신 → 한국어)
-    python translate_text.py "The central bank raised interest rates by 25 basis points."
+    python text_translate.py "The central bank raised interest rates by 25 basis points."
 
     # 파일(줄 단위) 번역 → 결과 파일로 저장
-    python translate_text.py --file news_en.txt --output news_ko.txt
+    python text_translate.py --file news_en.txt --output news_ko.txt
 
     # 표준입력(실시간 인입 시뮬레이션) 번역
-    cat feed_en.txt | python translate_text.py --stdin
+    cat feed_en.txt | python text_translate.py --stdin
 
     # 소스 언어를 영어로 명시 (자동 감지 대신)
-    python translate_text.py "Wall Street rallied on cooler inflation data." --from en --to ko
+    python text_translate.py "Wall Street rallied on cooler inflation data." --from en --to ko
 
 Prerequisites:
     - pip install -r requirements_text.txt
