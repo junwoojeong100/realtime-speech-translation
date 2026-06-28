@@ -8,7 +8,7 @@ translate.py / transcribe_*.py(음성 계열)와는 별개의 Azure 서비스를
 번역 엔진 (--engine):
     - nmt (기본): Azure AI Translator (Text Translation v3.0, NMT)
       → 저비용·고속·예측가능, 대량/실시간 인입에 적합
-    - llm: Azure OpenAI 직접 호출 (기본 배포 gpt-5.4-mini)
+    - llm: Azure OpenAI (기본 배포 gpt-5.4-mini) — Foundry 프로젝트 경유(권장) 또는 직접 호출
       → 문맥·뉘앙스·말투 품질↑, 비용·지연은 모델에 따라 다름
     - translator-llm: Translator 2026-06-06 API + GPT 배포 (기본 gpt-5.1)
       → Translator 인터페이스로 LLM 품질, tone/gender 등 부가 옵션 지원
@@ -39,7 +39,8 @@ Prerequisites:
     - pip install -r requirements_text.txt
     - NMT: .env에 AZURE_TRANSLATOR_RESOURCE_ID(또는 AZURE_SPEECH_RESOURCE_ID) 및
       AZURE_TRANSLATOR_REGION(또는 AZURE_SPEECH_REGION)
-    - LLM: .env에 AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT 및 Azure OpenAI 모델 배포
+    - LLM: .env에 AZURE_AI_PROJECT_ENDPOINT(Foundry 프로젝트, 권장) 또는
+      AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT, 그리고 모델 배포(계정 레벨)
     - Azure CLI 로그인 (az login)
 """
 
@@ -205,7 +206,7 @@ def translate_batch(
 
 
 # ---------------------------------------------------------------------------
-# LLM 번역 엔진 (Azure OpenAI 직접 호출)
+# LLM 번역 엔진 (Azure OpenAI — Foundry 프로젝트 경유 또는 직접 호출)
 # ---------------------------------------------------------------------------
 
 # 언어 코드 → LLM 프롬프트용 이름
@@ -219,12 +220,28 @@ _openai_client = None
 
 
 def _get_openai_client():
-    """AAD 인증으로 AzureOpenAI 클라이언트를 생성(캐시)."""
+    """OpenAI 클라이언트 생성(캐시).
+
+    AZURE_AI_PROJECT_ENDPOINT가 설정되면 Foundry 프로젝트를 경유하고,
+    없으면 Azure OpenAI 엔드포인트를 직접 호출한다. 둘 다 AAD(az login) 인증.
+    """
     global _openai_client
     if _openai_client is not None:
         return _openai_client
 
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from azure.identity import DefaultAzureCredential
+
+    # 1) Foundry 프로젝트 경유 (권장)
+    project_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
+    if project_endpoint:
+        from azure.ai.projects import AIProjectClient
+
+        project = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential())
+        _openai_client = project.get_openai_client()
+        return _openai_client
+
+    # 2) 폴백: Azure OpenAI 엔드포인트 직접
+    from azure.identity import get_bearer_token_provider
     from openai import AzureOpenAI
 
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
@@ -235,7 +252,8 @@ def _get_openai_client():
             endpoint = f"https://{name}.cognitiveservices.azure.com/"
     if not endpoint:
         print(
-            "[!] LLM 엔진에는 AZURE_OPENAI_ENDPOINT(또는 AZURE_SPEECH_RESOURCE_ID)가 필요합니다.",
+            "[!] LLM 엔진에는 AZURE_AI_PROJECT_ENDPOINT 또는 "
+            "AZURE_OPENAI_ENDPOINT(또는 AZURE_SPEECH_RESOURCE_ID)가 필요합니다.",
             file=sys.stderr,
         )
         sys.exit(1)

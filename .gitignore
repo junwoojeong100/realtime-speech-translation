@@ -9,3 +9,4 @@ __pycache__/
 *.ogg
 *.srt
 .venv/
+demo_output/
