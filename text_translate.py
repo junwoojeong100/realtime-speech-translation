@@ -10,6 +10,9 @@ translate.py / transcribe_*.py(음성 계열)와는 별개의 Azure 서비스를
       → 저비용·고속·예측가능, 대량/실시간 인입에 적합
     - llm: Azure OpenAI 직접 호출 (기본 배포 gpt-5.4-mini)
       → 문맥·뉘앙스·말투 품질↑, 비용·지연은 모델에 따라 다름
+    - translator-llm: Translator 2026-06-06 API + GPT 배포 (기본 gpt-5.1)
+      → Translator 인터페이스로 LLM 품질, tone/gender 등 부가 옵션 지원
+        (mini/nano 미지원 — gpt-5.1/gpt-5.4 풀모델 배포 필요)
 
 인증: Microsoft Entra ID(AAD, az login). NMT는 API 키도 지원(AZURE_TRANSLATOR_API_KEY).
 
@@ -19,6 +22,9 @@ Usage:
 
     # LLM 엔진으로 번역 (문맥/뉘앙스 품질↑)
     python text_translate.py "Wall Street rallied on cooler inflation data." --engine llm
+
+    # Translator 경유 LLM 번역 (gpt-5.1, tone/gender 등 지원)
+    python text_translate.py "Hey, wanna grab coffee?" --engine translator-llm
 
     # 파일(줄 단위) 번역 → 결과 파일로 저장
     python text_translate.py --file news_en.txt --output news_ko.txt --engine llm
@@ -291,6 +297,87 @@ def translate_batch_llm(
 
 
 # ---------------------------------------------------------------------------
+# Translator LLM 엔진 (Translator 2026-06-06 API + GPT 배포)
+# ---------------------------------------------------------------------------
+
+TRANSLATOR_LLM_API_VERSION = "2026-06-06"
+
+
+def _get_translator_custom_endpoint() -> str:
+    """Translator 2026-06-06 LLM용 커스텀 서브도메인 엔드포인트."""
+    resource_id = _get_resource_id()
+    if not resource_id:
+        print(
+            "[!] translator-llm 엔진에는 AZURE_TRANSLATOR_RESOURCE_ID(또는 AZURE_SPEECH_RESOURCE_ID)가 필요합니다.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    name = resource_id.rstrip("/").split("/")[-1]
+    return f"https://{name}.cognitiveservices.azure.com"
+
+
+def translate_batch_translator_llm(
+    texts: list[str],
+    to_langs: list[str],
+    from_lang: str | None = None,
+    endpoint: str | None = None,
+) -> list[dict]:
+    """Translator 2026-06-06 API로 GPT 배포를 사용해 번역(translate_batch과 동일 구조).
+
+    Translator LLM은 mini/nano를 지원하지 않으며 gpt-5.1/gpt-5.4 등 풀모델 배포가 필요합니다.
+    """
+    deployment = os.getenv("AZURE_TRANSLATOR_LLM_DEPLOYMENT", "gpt-5.1")
+    url = f"{_get_translator_custom_endpoint()}/translator/text/translate"
+    params = {"api-version": TRANSLATOR_LLM_API_VERSION}
+
+    inputs = []
+    for t in texts:
+        item: dict = {
+            "text": t,
+            "targets": [{"language": lang, "deploymentName": deployment} for lang in to_langs],
+        }
+        if from_lang:
+            item["language"] = from_lang
+        inputs.append(item)
+    body = {"inputs": inputs}
+
+    last_err: Exception | None = None
+    for attempt in range(4):
+        try:
+            headers = _build_headers()
+            resp = requests.post(url, params=params, headers=headers, json=body, timeout=120)
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            if attempt < 3:
+                time.sleep(1.0 * (attempt + 1))
+                continue
+            print(f"[!] 네트워크 오류로 번역 실패: {e}", file=sys.stderr)
+            raise
+
+        if resp.status_code == 200:
+            results = []
+            for item in resp.json().get("value", []):
+                translations = [
+                    {"to": tr.get("language"), "text": tr.get("text", "")}
+                    for tr in item.get("translations", [])
+                ]
+                results.append({"translations": translations})
+            return results
+        if resp.status_code in (401, 403) and attempt < 3 and not os.getenv("AZURE_TRANSLATOR_API_KEY"):
+            _token_cache["token"] = None
+            continue
+        if resp.status_code == 429 and attempt < 3:
+            time.sleep(1.5 * (attempt + 1))
+            continue
+        print(f"[!] Translator LLM API 오류 ({resp.status_code}): {resp.text}", file=sys.stderr)
+        resp.raise_for_status()
+
+    if last_err:
+        raise last_err
+    return []
+
+
+# ---------------------------------------------------------------------------
 # 입력 수집
 # ---------------------------------------------------------------------------
 
@@ -323,8 +410,9 @@ def main():
     parser.add_argument("--output", help="결과를 저장할 파일 경로(번역문만 줄 단위로 기록)")
     parser.add_argument("--show-source", action="store_true", help="원문도 함께 출력")
     parser.add_argument(
-        "--engine", choices=["nmt", "llm"], default="nmt",
-        help="번역 엔진: nmt(Azure AI Translator, 기본) 또는 llm(Azure OpenAI 직접 호출)",
+        "--engine", choices=["nmt", "llm", "translator-llm"], default="nmt",
+        help="번역 엔진: nmt(Azure AI Translator, 기본), llm(Azure OpenAI 직접 호출), "
+             "translator-llm(Translator 2026-06-06 + GPT 배포)",
     )
     args = parser.parse_args()
 
@@ -336,7 +424,10 @@ def main():
     total_chars = sum(len(t) for t in texts)
     if args.engine == "llm":
         translate_fn = translate_batch_llm
-        engine_label = f"LLM · {os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-5.4-mini')}"
+        engine_label = f"LLM · Azure OpenAI · {os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-5.4-mini')}"
+    elif args.engine == "translator-llm":
+        translate_fn = translate_batch_translator_llm
+        engine_label = f"Translator LLM · {os.getenv('AZURE_TRANSLATOR_LLM_DEPLOYMENT', 'gpt-5.1')}"
     else:
         translate_fn = translate_batch
         engine_label = "NMT · Azure AI Translator"
