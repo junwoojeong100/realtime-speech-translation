@@ -1,32 +1,29 @@
 # Realtime Speech Translation
 
-YouTube 영상의 다국어 음성을 한국어로 실시간 번역하는 CLI 도구입니다. 일반 영상과 라이브 스트림 모두 지원하며, SRT 자막 파일 출력이 가능합니다.
+방송사 뉴스룸을 위한 **Azure 기반 음성·텍스트 AI CLI 모음**입니다. YouTube·파일·마이크 음성의 다국어→한국어 **번역**과 **전사(STT)**, 외신 **텍스트 번역**(NMT/LLM)을 지원하며, SRT 자막 출력과 전체 워크플로우 데모(`demo.sh`)를 제공합니다.
 
 ## 주요 기능
 
-- YouTube 영상/라이브 스트림 음성 → 한국어 번역
-- 다국어 자동 감지 (영어, 페르시아어, 아랍어, 히브리어)
-- 오디오 파일/마이크 음성 → 한국어 전사 (STT)
-- 외신 텍스트(영어 등) → 한국어 번역 (Azure AI Translator)
-- SRT 자막 파일 생성
-- 실시간 중간 결과 표시
+- YouTube 영상/라이브 스트림 음성 → 한국어 번역 (다국어 자동 감지)
+- 오디오 파일/마이크 음성 → 한국어 전사 (STT) + SRT 자막
+- 외신 텍스트(영어 등) → 한국어 번역 (NMT / LLM / Translator-LLM)
+- 단일 Azure AI Services(Foundry) 리소스 + Entra ID(AAD) 인증
+- 전체 워크플로우를 한 번에 시연하는 `demo.sh`
 
-## 스크립트별 사용 서비스
+## 목차
 
-| 스크립트 | 작업 | Azure 서비스 | 모델 |
-|---|---|---|---|
-| `translate.py` | 음성 번역 | Speech Translation (Speech SDK) | Speech 번역 모델 |
-| `translate_llmspeech_rest.py` | 음성 번역 | LLM Speech (Fast Transcription, REST) | multimodal model |
-| `translate_llmspeech_sdk.py` | 음성 번역 | LLM Speech (azure-ai-transcription SDK) | multimodal model |
-| `text_translate.py` | 텍스트 번역 | Azure AI Translator(NMT) / Azure OpenAI(LLM) / Translator-LLM | NMT · `gpt-5.4-mini` · `gpt-5.1` |
-| `transcribe_file.py` | 음성 전사 | LLM Speech (Fast Transcription, REST) | **mai-transcribe-1.5** |
-| `transcribe_mic.py` | 음성 전사 | Speech SDK (실시간 연속 인식) | Speech 인식 모델 |
+- [빠른 시작 (전체 데모)](#빠른-시작-전체-데모)
+- [스크립트 구성](#스크립트-구성)
+- [사전 요구사항](#사전-요구사항)
+- [설치](#설치)
+- [환경 변수 설정](#환경-변수-설정)
+- [사용법](#사용법)
+- [서비스 비교 & 선택 가이드](#서비스-비교--선택-가이드)
+- [대안 가이드 (미사용 옵션)](#대안-가이드-미사용-옵션)
 
-> **MAI-Transcribe 모델은 전사(transcription)에만 사용되며, 번역(translation)에는 사용되지 않습니다.** 공식 문서 기준 MAI-transcribe는 번역을 지원하지 않고, 실제로 번역 작업에 모델을 지정하면 서비스가 거부합니다(`HTTP 400: Enhanced mode with model requires task to be 'transcribe'`). 번역은 **LLM Speech의 multimodal model**(음성) 또는 **Azure AI Translator**(텍스트)가 담당하며, MAI 모델을 실제로 호출하는 예제는 `transcribe_file.py`(기본 전사 모드, `mai-transcribe-1.5`) 하나뿐입니다.
+## 빠른 시작 (전체 데모)
 
-## 전체 데모 (방송사 뉴스룸 워크플로우)
-
-`demo.sh` 하나로 방송사 뉴스룸의 대표 워크플로우와 **이 리포의 모든 스크립트**를 한 번에 시연합니다 — 고객 데모/PoC에 바로 사용하세요.
+`demo.sh` 하나로 방송사 뉴스룸의 대표 워크플로우와 **이 리포의 모든 스크립트**를 한 번에 시연합니다 — 고객 데모/PoC에 바로 사용하세요. (먼저 [설치](#설치)·[환경 변수 설정](#환경-변수-설정) 필요)
 
 ```bash
 az login          # (안 되어 있으면)
@@ -43,9 +40,26 @@ az login          # (안 되어 있으면)
 | 4 | YouTube 영상/라이브 → 한국어 번역 (음성 3엔진) | `translate.py` · `translate_llmspeech_rest.py` · `translate_llmspeech_sdk.py` |
 | 5 | (라이브) 스튜디오 마이크 실시간 전사 — 실행 안내 | `transcribe_mic.py` |
 
-> 음성 데모는 macOS `say`로 테스트 음성을 자동 생성하고, 결과 SRT 자막은 `demo_output/`에 저장됩니다. 4번 YouTube는 기본 클립(짧은 영어 영상)으로 **3개 음성 번역 스크립트를 모두** 실행합니다. 5번 마이크만 라이브 입력이 필요해 안내로 대체됩니다. (`az login`·FFmpeg·`.venv` 필요)
+> 음성 데모는 macOS `say`로 테스트 음성을 자동 생성하고, 결과 SRT 자막은 `demo_output/`에 저장됩니다. 4번 YouTube는 기본 클립(짧은 영어 영상)으로 **3개 음성 번역 스크립트를 모두** 실행합니다. 5번 마이크만 라이브 입력이 필요해 안내로 대체됩니다.
 
-## 세 가지 음성 번역 엔진
+## 스크립트 구성
+
+6개 CLI 스크립트로 구성되며, 모두 단일 Azure AI Services(Foundry) 리소스를 공유합니다.
+
+| 스크립트 | 작업 | Azure 서비스 | 모델 |
+|---|---|---|---|
+| `translate.py` | 음성 번역 | Speech Translation (Speech SDK) | Speech 번역 모델 |
+| `translate_llmspeech_rest.py` | 음성 번역 | LLM Speech (Fast Transcription, REST) | multimodal model |
+| `translate_llmspeech_sdk.py` | 음성 번역 | LLM Speech (azure-ai-transcription SDK) | multimodal model |
+| `text_translate.py` | 텍스트 번역 | Azure AI Translator(NMT) / Azure OpenAI(LLM) / Translator-LLM | NMT · `gpt-5.4-mini` · `gpt-5.1` |
+| `transcribe_file.py` | 음성 전사 | LLM Speech (Fast Transcription, REST) | **mai-transcribe-1.5** |
+| `transcribe_mic.py` | 음성 전사 | Speech SDK (실시간 연속 인식) | Speech 인식 모델 |
+
+> **MAI-Transcribe 모델은 전사(transcription)에만 사용되며, 번역(translation)에는 사용되지 않습니다.** 공식 문서 기준 MAI-transcribe는 번역을 지원하지 않고, 실제로 번역 작업에 모델을 지정하면 서비스가 거부합니다(`HTTP 400: Enhanced mode with model requires task to be 'transcribe'`). 번역은 **LLM Speech의 multimodal model**(음성) 또는 **Azure AI Translator**(텍스트)가 담당하며, MAI 모델을 실제로 호출하는 예제는 `transcribe_file.py`(기본 전사 모드, `mai-transcribe-1.5`) 하나뿐입니다.
+
+### 음성 번역 3엔진 비교
+
+YouTube/스트림 음성을 한국어로 번역하는 세 스크립트의 차이:
 
 | | `translate.py` | `translate_llmspeech_rest.py` | `translate_llmspeech_sdk.py` |
 |---|---|---|---|
@@ -60,8 +74,8 @@ az login          # (안 되어 있으면)
 - Python 3.10+
 - [FFmpeg](https://ffmpeg.org/) (`brew install ffmpeg`)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) (pip으로 자동 설치)
-- Azure Speech 리소스 (Azure Portal에서 생성)
-- Azure CLI 로그인 (`az login`) — Azure AD 인증 사용 시
+- Azure AI Services(Foundry) 리소스 (Speech·Translator·OpenAI 포함)
+- Azure CLI 로그인 (`az login`) — Entra ID(AAD) 인증 사용
 
 ## 설치
 
@@ -146,7 +160,9 @@ Azure AD 인증만 지원합니다.
 
 ## 사용법
 
-### translate.py — Speech SDK
+### 음성 번역 — YouTube/스트림 → 한국어
+
+#### translate.py — Speech Translation SDK
 
 ```bash
 # 일반 영상 번역
@@ -162,7 +178,7 @@ python translate.py "https://www.youtube.com/watch?v=VIDEO_ID" --live
 python translate.py "https://www.youtube.com/watch?v=VIDEO_ID" --keep-audio
 ```
 
-### translate_llmspeech_rest.py — LLM Speech (REST API)
+#### translate_llmspeech_rest.py — LLM Speech (REST API)
 
 ```bash
 # 영상 번역
@@ -175,7 +191,7 @@ python translate_llmspeech_rest.py "https://www.youtube.com/watch?v=VIDEO_ID" --
 python translate_llmspeech_rest.py "https://www.youtube.com/watch?v=VIDEO_ID" --chunk-seconds 5
 ```
 
-### translate_llmspeech_sdk.py — LLM Speech (azure-ai-transcription SDK)
+#### translate_llmspeech_sdk.py — LLM Speech (azure-ai-transcription SDK)
 
 ```bash
 # 영상 번역
@@ -191,9 +207,11 @@ python translate_llmspeech_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID" --s
 python translate_llmspeech_sdk.py "https://www.youtube.com/watch?v=VIDEO_ID" --output output.srt
 ```
 
-실행 중 `Ctrl+C`로 종료할 수 있습니다.
+> 음성 번역 스크립트는 실행 중 `Ctrl+C`로 종료할 수 있습니다.
 
-### transcribe_file.py — 오디오 파일 전사 (STT)
+### 음성 전사 (STT)
+
+#### transcribe_file.py — 오디오 파일 전사
 
 기본 모델은 최신 `mai-transcribe-1.5`입니다(전사 모드 한정 — 번역 모드에서는 서비스 제약으로 기본 모델이 사용됩니다).
 
@@ -219,7 +237,7 @@ ffmpeg -i ko.aiff -ar 16000 -ac 1 ko.wav
 python transcribe_file.py ko.wav
 ```
 
-### transcribe_mic.py — 마이크 실시간 전사
+#### transcribe_mic.py — 마이크 실시간 전사
 
 ```bash
 # 기본 마이크에서 한국어 실시간 전사 (Ctrl+C로 종료)
@@ -237,7 +255,9 @@ python transcribe_mic.py --auto-detect ko-KR en-US ja-JP
 
 macOS는 첫 실행 시 터미널 마이크 권한 허용이 필요합니다(시스템 설정 → 개인정보 보호 및 보안 → 마이크).
 
-### text_translate.py — 외신 텍스트 번역 (NMT / LLM / Translator-LLM)
+### 텍스트 번역 — 외신 → 한국어
+
+#### text_translate.py (NMT / LLM / Translator-LLM)
 
 로이터·AP·CNN 등 외신 영어 텍스트를 한국어로 번역합니다. **세 가지 엔진**을 `--engine`으로 선택합니다.
 
@@ -255,7 +275,7 @@ macOS는 첫 실행 시 터미널 마이크 권한 허용이 필요합니다(시
 # NMT(기본) — 대량·고속
 python text_translate.py "The central bank raised interest rates."
 
-# LLM — Azure OpenAI 직접 호출 (문맥·뉘앙스 품질↑)
+# LLM — Azure OpenAI (Foundry 프로젝트 경유, 문맥·뉘앙스 품질↑)
 python text_translate.py "The Fed's pivot caught markets flat-footed." --engine llm
 
 # Translator 경유 LLM (gpt-5.1, tone/gender 등 지원)
@@ -270,10 +290,9 @@ cat news_en.txt | python text_translate.py --stdin
 
 > **선택 가이드**: 관용구·맥락이 중요하면 LLM 계열이 더 정확합니다. 예) "the Fed's *pivot*" → NMT "회귀"(오역) vs LLM "방향 전환". 대량·실시간은 **NMT 기본**, 고가치 기사만 **LLM 선택 적용**하는 **하이브리드**가 효율적입니다.
 > - **`llm`(직접) vs `translator-llm`(경유)**: 품질은 비슷. 프롬프트 완전 제어·저비용 모델이면 `llm`, Translator 한 곳에서 NMT↔LLM 전환·tone/gender 내장 옵션이면 `translator-llm`.
-> - 두 LLM 경로 모두 **Azure OpenAI 모델 배포 필요** (translator-llm은 gpt-5.1/5.4 **풀모델만**).
-> - **Azure 리소스 구성**: 단일 AIServices(Foundry) 리소스 `speech-rt-3d9e02`에 Speech·Translator·OpenAI 배포가 모두 있고, Foundry 프로젝트 `proj-realtime-speech`가 이를 공유합니다. **모델 배포는 계정(Foundry 리소스) 레벨**이며 프로젝트가 함께 사용합니다(프로젝트별 별도 배포 아님). `--engine llm`은 `AZURE_AI_PROJECT_ENDPOINT`로 **프로젝트를 경유**합니다.
+> - **Azure 리소스 구성**: 단일 AIServices(Foundry) 리소스에 Speech·Translator·OpenAI 배포가 모두 있고, Foundry 프로젝트가 이를 공유합니다. **모델 배포는 계정(Foundry 리소스) 레벨**이며 프로젝트가 함께 사용합니다(프로젝트별 별도 배포 아님). `--engine llm`은 `AZURE_AI_PROJECT_ENDPOINT`로 **프로젝트를 경유**합니다.
 
-## 서비스 비교: 비용·성능·용도
+## 서비스 비교 & 선택 가이드
 
 이 리포가 사용하는 4가지 Azure 서비스를 고객 관점에서 비교합니다.
 
@@ -289,17 +308,19 @@ cat news_en.txt | python text_translate.py --stdin
 ¹ 음성 입출력 포함 SKU 기준(음성→텍스트만이면 더 낮을 수 있음). ² Fast Transcription과 **동일 SKU·가격**(공식 명시). ³ 종량제 기준, 약정 티어 시 ~$8.22/백만자, F0 무료 200만자/월.
 
 ### 핵심 인사이트 (고객 설명용)
+
 - **음성 번역은 LLM Speech가 전통 Speech Translation보다 크게 저렴**(LLM Speech ~$0.36/시간 vs Speech Translation 수 $~$10/시간대)하고 품질도 더 높습니다. 단, LLM Speech는 **preview**(프로덕션 SLA 없음)이므로, 안정성·GA가 필수면 `translate.py`(Speech Translation)를 사용합니다.
 - **전사(한국어 STT)** 는 LLM Speech의 `mai-transcribe-1.5`가 정확도·속도 면에서 우수하나 preview입니다.
 - **텍스트 번역**(외신 스크립트)은 음성 서비스와 무관하게 Azure AI Translator를 쓰며, 문자 수 기반 과금이라 대량 처리 시 **약정 티어**로 단가를 낮출 수 있습니다.
 
 ### 빠른 선택 가이드
+
 - 라이브 방송/회의 **음성 → 실시간 번역 자막** + GA 필수 → `translate.py`
 - **음성 → 번역**을 **저비용·고품질**로(파일럿/PoC 허용) → `translate_llmspeech_*`
 - **한국어 음성 → 한국어 텍스트 전사** → `transcribe_file.py`(파일) / `transcribe_mic.py`(마이크)
 - **텍스트(외신) → 번역** → `text_translate.py` (대량·고속 = `--engine nmt` 기본, 고품질 = `--engine llm`)
 
-## 여기서 쓰지 않은 전사·번역 대안 (참고 가이드)
+## 대안 가이드 (미사용 옵션)
 
 상황에 따라 더 적합할 수 있는, 이 리포에 포함하지 않은 Azure 옵션입니다.
 
