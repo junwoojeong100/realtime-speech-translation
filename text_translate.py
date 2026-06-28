@@ -1,34 +1,40 @@
 """
-외신 영어 텍스트 번역 (Azure AI Translator, Text Translation v3.0)
+외신 영어 텍스트 번역 — 두 가지 엔진 (NMT / LLM)
 
 로이터·AP·CNN 등 실시간 인입되는 외신 영어 스크립트(텍스트)를 한국어로 번역하는
-대량 처리용 PoC 샘플입니다(요건 2: 영어 외신 텍스트 → 한국어). 음성이 아닌
-'텍스트→텍스트' 번역 영역으로, translate.py / transcribe_*.py(음성 계열)와는
-별개의 Azure 서비스를 사용합니다. 소스 언어는 기본 자동 감지(영어 포함)입니다.
+대량 처리용 샘플입니다. 음성이 아닌 '텍스트→텍스트' 번역 영역으로,
+translate.py / transcribe_*.py(음성 계열)와는 별개의 Azure 서비스를 사용합니다.
 
-인증:
-    - 기본: Microsoft Entra ID(AAD) 토큰 — az login 필요, 키 비활성 환경 지원
-      (Authorization: Bearer + Ocp-Apim-ResourceId + Ocp-Apim-Subscription-Region)
-    - 선택: API 키(AZURE_TRANSLATOR_API_KEY)
+번역 엔진 (--engine):
+    - nmt (기본): Azure AI Translator (Text Translation v3.0, NMT)
+      → 저비용·고속·예측가능, 대량/실시간 인입에 적합
+    - llm: Azure OpenAI 직접 호출 (기본 배포 gpt-5.4-mini)
+      → 문맥·뉘앙스·말투 품질↑, 비용·지연은 모델에 따라 다름
+
+인증: Microsoft Entra ID(AAD, az login). NMT는 API 키도 지원(AZURE_TRANSLATOR_API_KEY).
 
 Usage:
-    # 단건 번역 (영어 외신 → 한국어)
+    # NMT(기본) 단건 번역
     python text_translate.py "The central bank raised interest rates by 25 basis points."
 
-    # 파일(줄 단위) 번역 → 결과 파일로 저장
-    python text_translate.py --file news_en.txt --output news_ko.txt
+    # LLM 엔진으로 번역 (문맥/뉘앙스 품질↑)
+    python text_translate.py "Wall Street rallied on cooler inflation data." --engine llm
 
-    # 표준입력(실시간 인입 시뮬레이션) 번역
+    # 파일(줄 단위) 번역 → 결과 파일로 저장
+    python text_translate.py --file news_en.txt --output news_ko.txt --engine llm
+
+    # 표준입력(실시간 인입 시뮬레이션)
     cat feed_en.txt | python text_translate.py --stdin
 
-    # 소스 언어를 영어로 명시 (자동 감지 대신)
-    python text_translate.py "Wall Street rallied on cooler inflation data." --from en --to ko
+    # 소스 언어를 영어로 명시
+    python text_translate.py "..." --from en --to ko
 
 Prerequisites:
     - pip install -r requirements_text.txt
-    - .env에 AZURE_TRANSLATOR_RESOURCE_ID(또는 AZURE_SPEECH_RESOURCE_ID) 및
-      AZURE_TRANSLATOR_REGION(또는 AZURE_SPEECH_REGION) 설정
-    - Azure CLI 로그인 (az login) — AAD 인증 시
+    - NMT: .env에 AZURE_TRANSLATOR_RESOURCE_ID(또는 AZURE_SPEECH_RESOURCE_ID) 및
+      AZURE_TRANSLATOR_REGION(또는 AZURE_SPEECH_REGION)
+    - LLM: .env에 AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT 및 Azure OpenAI 모델 배포
+    - Azure CLI 로그인 (az login)
 """
 
 from __future__ import annotations
@@ -193,6 +199,98 @@ def translate_batch(
 
 
 # ---------------------------------------------------------------------------
+# LLM 번역 엔진 (Azure OpenAI 직접 호출)
+# ---------------------------------------------------------------------------
+
+# 언어 코드 → LLM 프롬프트용 이름
+_LANG_NAMES = {
+    "ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese",
+    "fr": "French", "de": "German", "es": "Spanish", "ar": "Arabic",
+    "fa": "Persian", "he": "Hebrew", "ru": "Russian", "vi": "Vietnamese",
+}
+
+_openai_client = None
+
+
+def _get_openai_client():
+    """AAD 인증으로 AzureOpenAI 클라이언트를 생성(캐시)."""
+    global _openai_client
+    if _openai_client is not None:
+        return _openai_client
+
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from openai import AzureOpenAI
+
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    if not endpoint:
+        resource_id = _get_resource_id()
+        if resource_id:
+            name = resource_id.rstrip("/").split("/")[-1]
+            endpoint = f"https://{name}.cognitiveservices.azure.com/"
+    if not endpoint:
+        print(
+            "[!] LLM 엔진에는 AZURE_OPENAI_ENDPOINT(또는 AZURE_SPEECH_RESOURCE_ID)가 필요합니다.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+    )
+    _openai_client = AzureOpenAI(
+        azure_endpoint=endpoint,
+        azure_ad_token_provider=token_provider,
+        api_version=api_version,
+    )
+    return _openai_client
+
+
+def _llm_translate_one(text: str, to_lang: str, from_lang: str | None = None) -> str:
+    """단일 텍스트를 LLM으로 번역."""
+    client = _get_openai_client()
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4-mini")
+    target = _LANG_NAMES.get(to_lang, to_lang)
+    src = f" from {_LANG_NAMES.get(from_lang, from_lang)}" if from_lang else ""
+    system = (
+        f"You are a professional news translator. Translate the user's text{src} into {target}. "
+        "Preserve meaning, tone, named entities, and numbers. "
+        "Output only the translation with no quotes or commentary."
+    )
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
+    try:
+        resp = client.chat.completions.create(model=deployment, messages=messages, temperature=0)
+    except Exception as e:  # noqa: BLE001
+        # 일부 모델은 temperature를 지원하지 않음 → 제거 후 재시도
+        if "temperature" in str(e).lower():
+            resp = client.chat.completions.create(model=deployment, messages=messages)
+        else:
+            raise
+    return (resp.choices[0].message.content or "").strip()
+
+
+def translate_batch_llm(
+    texts: list[str],
+    to_langs: list[str],
+    from_lang: str | None = None,
+    endpoint: str | None = None,
+) -> list[dict]:
+    """translate_batch과 동일한 결과 구조를 LLM(Azure OpenAI)으로 생성(라인 단위)."""
+    results: list[dict] = []
+    for t in texts:
+        translations = []
+        for lang in to_langs:
+            try:
+                out = _llm_translate_one(t, lang, from_lang)
+            except Exception as e:  # noqa: BLE001
+                print(f"[!] LLM 번역 오류: {e}", file=sys.stderr)
+                out = ""
+            translations.append({"to": lang, "text": out})
+        results.append({"translations": translations})
+    return results
+
+
+# ---------------------------------------------------------------------------
 # 입력 수집
 # ---------------------------------------------------------------------------
 
@@ -224,6 +322,10 @@ def main():
     parser.add_argument("--to", dest="to_langs", action="append", help="타깃 언어 코드(반복 지정 가능, 기본 ko)")
     parser.add_argument("--output", help="결과를 저장할 파일 경로(번역문만 줄 단위로 기록)")
     parser.add_argument("--show-source", action="store_true", help="원문도 함께 출력")
+    parser.add_argument(
+        "--engine", choices=["nmt", "llm"], default="nmt",
+        help="번역 엔진: nmt(Azure AI Translator, 기본) 또는 llm(Azure OpenAI 직접 호출)",
+    )
     args = parser.parse_args()
 
     to_langs = args.to_langs or ["ko"]
@@ -232,8 +334,14 @@ def main():
         parser.error("번역할 입력이 없습니다. 텍스트 인자, --file, 또는 --stdin 중 하나를 지정하세요.")
 
     total_chars = sum(len(t) for t in texts)
+    if args.engine == "llm":
+        translate_fn = translate_batch_llm
+        engine_label = f"LLM · {os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-5.4-mini')}"
+    else:
+        translate_fn = translate_batch
+        engine_label = "NMT · Azure AI Translator"
     print(
-        f"[*] 입력 {len(texts):,}줄 / {total_chars:,}자  →  {', '.join(to_langs)} 번역 시작",
+        f"[*] 입력 {len(texts):,}줄 / {total_chars:,}자  →  {', '.join(to_langs)} 번역 시작  [{engine_label}]",
         file=sys.stderr,
     )
 
@@ -242,7 +350,7 @@ def main():
     start = time.monotonic()
 
     for batch in _chunk_texts(texts):
-        results = translate_batch(batch, to_langs, args.from_lang)
+        results = translate_fn(batch, to_langs, args.from_lang)
         for src, item in zip(batch, results):
             translations = item.get("translations", [])
             for tr in translations:
