@@ -8,7 +8,7 @@ translate.py / transcribe_*.py(음성 계열)와는 별개의 Azure 서비스를
 번역 엔진 (--engine):
     - nmt (기본): Azure AI Translator (Text Translation v3.0, NMT)
       → 저비용·고속·예측가능, 대량/실시간 인입에 적합
-    - llm: Azure OpenAI (기본 배포 gpt-5.4-mini) — Foundry 프로젝트 경유(권장) 또는 직접 호출
+    - llm: Azure OpenAI (gpt-5.4-mini) — Foundry 프로젝트 경유
       → 문맥·뉘앙스·말투 품질↑, 비용·지연은 모델에 따라 다름
     - translator-llm: Translator 2026-06-06 API + GPT 배포 (기본 gpt-5.1)
       → Translator 인터페이스로 LLM 품질, tone/gender 등 부가 옵션 지원
@@ -39,8 +39,8 @@ Prerequisites:
     - pip install -r requirements_text.txt
     - NMT: .env에 AZURE_TRANSLATOR_RESOURCE_ID(또는 AZURE_SPEECH_RESOURCE_ID) 및
       AZURE_TRANSLATOR_REGION(또는 AZURE_SPEECH_REGION)
-    - LLM: .env에 AZURE_AI_PROJECT_ENDPOINT(Foundry 프로젝트, 권장) 또는
-      AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT, 그리고 모델 배포(계정 레벨)
+    - LLM: .env에 AZURE_AI_PROJECT_ENDPOINT(Foundry 프로젝트) 및
+      계정 레벨 모델 배포(gpt-5.4-mini, 프로젝트가 공유)
     - Azure CLI 로그인 (az login)
 """
 
@@ -206,7 +206,7 @@ def translate_batch(
 
 
 # ---------------------------------------------------------------------------
-# LLM 번역 엔진 (Azure OpenAI — Foundry 프로젝트 경유 또는 직접 호출)
+# LLM 번역 엔진 (Azure OpenAI — Foundry 프로젝트 경유)
 # ---------------------------------------------------------------------------
 
 # 언어 코드 → LLM 프롬프트용 이름
@@ -216,64 +216,40 @@ _LANG_NAMES = {
     "fa": "Persian", "he": "Hebrew", "ru": "Russian", "vi": "Vietnamese",
 }
 
+# Foundry 프로젝트가 공유하는 계정 레벨 모델 배포. 다른 모델을 쓰려면 여기를 바꾼다.
+LLM_MODEL = "gpt-5.4-mini"
+
 _openai_client = None
 
 
 def _get_openai_client():
-    """OpenAI 클라이언트 생성(캐시).
+    """Foundry 프로젝트를 경유하는 OpenAI 클라이언트(캐시).
 
-    AZURE_AI_PROJECT_ENDPOINT가 설정되면 Foundry 프로젝트를 경유하고,
-    없으면 Azure OpenAI 엔드포인트를 직접 호출한다. 둘 다 AAD(az login) 인증.
+    AZURE_AI_PROJECT_ENDPOINT(Foundry 프로젝트 엔드포인트)만 사용하며 AAD(az login) 인증.
     """
     global _openai_client
     if _openai_client is not None:
         return _openai_client
 
-    from azure.identity import DefaultAzureCredential
-
-    # 1) Foundry 프로젝트 경유 (권장)
     project_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
-    if project_endpoint:
-        from azure.ai.projects import AIProjectClient
-
-        project = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential())
-        _openai_client = project.get_openai_client()
-        return _openai_client
-
-    # 2) 폴백: Azure OpenAI 엔드포인트 직접
-    from azure.identity import get_bearer_token_provider
-    from openai import AzureOpenAI
-
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    if not endpoint:
-        resource_id = _get_resource_id()
-        if resource_id:
-            name = resource_id.rstrip("/").split("/")[-1]
-            endpoint = f"https://{name}.cognitiveservices.azure.com/"
-    if not endpoint:
+    if not project_endpoint:
         print(
-            "[!] LLM 엔진에는 AZURE_AI_PROJECT_ENDPOINT 또는 "
-            "AZURE_OPENAI_ENDPOINT(또는 AZURE_SPEECH_RESOURCE_ID)가 필요합니다.",
+            "[!] LLM 엔진에는 AZURE_AI_PROJECT_ENDPOINT(Foundry 프로젝트 엔드포인트)가 필요합니다.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-    )
-    _openai_client = AzureOpenAI(
-        azure_endpoint=endpoint,
-        azure_ad_token_provider=token_provider,
-        api_version=api_version,
-    )
+    from azure.identity import DefaultAzureCredential
+    from azure.ai.projects import AIProjectClient
+
+    project = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential())
+    _openai_client = project.get_openai_client()
     return _openai_client
 
 
 def _llm_translate_one(text: str, to_lang: str, from_lang: str | None = None) -> str:
     """단일 텍스트를 LLM으로 번역."""
     client = _get_openai_client()
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4-mini")
     target = _LANG_NAMES.get(to_lang, to_lang)
     src = f" from {_LANG_NAMES.get(from_lang, from_lang)}" if from_lang else ""
     system = (
@@ -283,11 +259,11 @@ def _llm_translate_one(text: str, to_lang: str, from_lang: str | None = None) ->
     )
     messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
     try:
-        resp = client.chat.completions.create(model=deployment, messages=messages, temperature=0)
+        resp = client.chat.completions.create(model=LLM_MODEL, messages=messages, temperature=0)
     except Exception as e:  # noqa: BLE001
         # 일부 모델은 temperature를 지원하지 않음 → 제거 후 재시도
         if "temperature" in str(e).lower():
-            resp = client.chat.completions.create(model=deployment, messages=messages)
+            resp = client.chat.completions.create(model=LLM_MODEL, messages=messages)
         else:
             raise
     return (resp.choices[0].message.content or "").strip()
@@ -442,7 +418,7 @@ def main():
     total_chars = sum(len(t) for t in texts)
     if args.engine == "llm":
         translate_fn = translate_batch_llm
-        engine_label = f"LLM · Azure OpenAI · {os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-5.4-mini')}"
+        engine_label = f"LLM · Foundry 프로젝트 · {LLM_MODEL}"
     elif args.engine == "translator-llm":
         translate_fn = translate_batch_translator_llm
         engine_label = f"Translator LLM · {os.getenv('AZURE_TRANSLATOR_LLM_DEPLOYMENT', 'gpt-5.1')}"

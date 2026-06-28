@@ -141,10 +141,7 @@ Azure AD 인증만 지원합니다.
 | `AZURE_TRANSLATOR_RESOURCE_ID` | 멀티서비스 리소스 ID (미설정 시 `AZURE_SPEECH_RESOURCE_ID` 사용) |
 | `AZURE_TRANSLATOR_API_KEY` | (선택) API 키 인증 시 |
 | `AZURE_TRANSLATOR_ENDPOINT` | (선택) 커스텀 엔드포인트 |
-| `AZURE_AI_PROJECT_ENDPOINT` | (`--engine llm`, **권장**) Foundry 프로젝트 엔드포인트 — 설정 시 프로젝트 경유 |
-| `AZURE_OPENAI_DEPLOYMENT` | (`--engine llm`) 모델 배포 이름 (기본 `gpt-5.4-mini`) |
-| `AZURE_OPENAI_ENDPOINT` | (`--engine llm`, 폴백) 프로젝트 미설정 시 Azure OpenAI 직접 엔드포인트 |
-| `AZURE_OPENAI_API_VERSION` | (`--engine llm`, 폴백) API 버전 (기본 `2024-10-21`) |
+| `AZURE_AI_PROJECT_ENDPOINT` | (`--engine llm`) Foundry 프로젝트 엔드포인트 (모델 `gpt-5.4-mini`은 계정 레벨 배포를 공유) |
 | `AZURE_TRANSLATOR_LLM_DEPLOYMENT` | (`--engine translator-llm`) Translator용 GPT 배포 이름 (기본 `gpt-5.1`) |
 
 ## 사용법
@@ -245,13 +242,13 @@ macOS는 첫 실행 시 터미널 마이크 권한 허용이 필요합니다(시
 로이터·AP·CNN 등 외신 영어 텍스트를 한국어로 번역합니다. **세 가지 엔진**을 `--engine`으로 선택합니다.
 
 - **`nmt`(기본)** — Azure AI Translator: 저비용·고속·예측가능 → **대량/실시간 인입**에 적합
-- **`llm`** — Azure OpenAI(기본 `gpt-5.4-mini`) — **Foundry 프로젝트 경유**(권장, 미설정 시 직접 호출): 프롬프트 자유도↑, 모델 선택 자유(mini도 가능)
+- **`llm`** — Azure OpenAI(`gpt-5.4-mini`) — **Foundry 프로젝트 경유**: 프롬프트 자유도↑, 문맥·뉘앙스 품질↑
 - **`translator-llm`** — Translator 2026-06-06 + GPT 배포(기본 `gpt-5.1`) **경유**: Translator 한 인터페이스로 LLM 품질 + `tone`/`gender` 옵션 (mini/nano 미지원)
 
 | 엔진 | 경로 | 모델 | 비용 | 품질·특징 | 적합 |
 |---|---|---|---|---|---|
 | `nmt`(기본) | Azure AI Translator | NMT | **최저**(~$10/백만자) | 빠름·예측가능·GA | 대량·실시간 인입 |
-| `llm` | Azure OpenAI (**Foundry 프로젝트** 경유) | `gpt-5.4-mini`(교체 가능) | 토큰 과금(모델별) | 문맥·뉘앙스↑, 프롬프트 자유 | 고가치 기사·복합 가공 |
+| `llm` | Azure OpenAI (**Foundry 프로젝트** 경유) | `gpt-5.4-mini` | 토큰 과금(모델별) | 문맥·뉘앙스↑, 프롬프트 자유 | 고가치 기사·복합 가공 |
 | `translator-llm` | Translator **경유** LLM | `gpt-5.1`(풀모델만) | 토큰 과금(프리미엄) | 문맥↑ + tone/gender 내장 | Translator 한 곳에서 NMT↔LLM 전환 |
 
 ```bash
